@@ -661,6 +661,13 @@ function list_refunds(; payment_intent::String,
                       stripe_account::Union{String,Nothing} = nothing,
                       limit::Int = 100,
                       starting_after::Union{String,Nothing} = nothing)::ListResponse{Refund}
+    return _list_refunds(payment_intent, stripe_account, limit, starting_after)
+end
+
+# Positional, so a caller can pass a `Union{String,Nothing}` cursor: as a keyword,
+# it makes the keyword tuple's type abstract, which `juliac --trim` rejects.
+function _list_refunds(payment_intent::String, stripe_account::Union{String,Nothing},
+                       limit::Int, starting_after::Union{String,Nothing})::ListResponse{Refund}
     query = Dict{Symbol,Any}(:payment_intent => payment_intent, :limit => limit)
     starting_after !== nothing && (query[:starting_after] = starting_after)
     return _make_request(ListResponse{Refund}, _get_client(), "GET", "v1/refunds";
@@ -677,8 +684,7 @@ function refunded_total(payment_intent::String;
     total = 0
     cursor = nothing
     while true
-        page = list_refunds(; payment_intent, stripe_account, limit = 100,
-                            starting_after = cursor)
+        page = _list_refunds(payment_intent, stripe_account, 100, cursor)
         for refund in page.data
             lowercase(something(refund.status, "")) == "succeeded" || continue
             total += something(refund.amount, 0)
