@@ -1,0 +1,47 @@
+name: CI
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      actions: write
+      contents: read
+    continue-on-error: ${{ matrix.version == 'pre' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['1', 'min', 'pre']
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+  trim:
+    name: juliac --trim=safe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          # Julia 1.13 cannot trim a ScopedValues update; 1.14 can (JuliaLang/julia#62730).
+          version: '1.14'
+          include-all-prereleases: true
+      - uses: julia-actions/cache@v2
+      - name: Compile and run test/trim/main.jl
+        run: |
+          julia --project=test/trim -e 'using Pkg; Pkg.instantiate()'
+          julia --project=@juliac -e 'using Pkg; Pkg.add("JuliaC")'
+          julia --project=@juliac -e 'using JuliaC; JuliaC.main(["--output-exe", "sctrim", "--bundle", "build", "--project", "test/trim", "--trim=safe", "--experimental", "test/trim/main.jl"])'
+          ./build/bin/sctrim

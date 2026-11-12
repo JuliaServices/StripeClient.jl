@@ -1,0 +1,6 @@
+[deps]
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+StripeClient = "f63f1246-d880-4847-836e-f7377dc83271"
+
+[sources]
+StripeClient = {path = "../.."}
