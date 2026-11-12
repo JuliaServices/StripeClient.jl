@@ -200,7 +200,7 @@ end
             "/v1/account_sessions" => """{"object": "account_session", "account": "acct_1", "client_secret": "accs_secret_x", "expires_at": 1762901800, "livemode": false, "components": {}}""",
             "/v1/tax/settings" => """{"object": "tax.settings", "status": "pending", "status_details": {"pending": {"missing_fields": ["head_office"]}}, "defaults": {"tax_behavior": null, "tax_code": "txcd_10000000"}, "head_office": null, "livemode": false}""",
             "/v1/tax/registrations" => """{"object": "list", "url": "/v1/tax/registrations", "has_more": false, "data": [{"id": "taxreg_1", "object": "tax.registration", "country": "US", "country_options": {"us": {"state": "UT", "type": "state_sales_tax"}}, "status": "active", "active_from": 1762900000, "expires_at": null, "livemode": false}]}""",
-            "/v1/tax/locations" => """{"id": "taxloc_1", "object": "tax.location", "display_name": "Main gym", "address": {"line1": "1 Main St", "city": "Provo", "state": "UT", "postal_code": "84601", "country": "US"}, "livemode": false}""",
+            "/v1/tax/locations" => """{"id": "taxloc_1", "object": "tax.location", "type": "performance", "description": "Main gym", "address": {"line1": "1 Main St", "city": "Provo", "state": "UT", "postal_code": "84601", "country": "US"}}""",
             "/v1/products" => """{"id": "prod_1", "object": "product", "name": "Entry", "active": true, "tax_code": "txcd_20030000", "metadata": {"event": "E1"}, "images": [], "livemode": false}""",
             "/v1/refunds" => refund("re_1", "pending", 700),
             "/v1/refunds/re_1" => refund("re_1", "succeeded", 700),
@@ -246,16 +246,17 @@ end
 
             location = SC.create_tax_location("acct_1", "Main gym",
                 Dict{Symbol,Any}(:line1 => "1 Main St", :country => "US"); idempotency_key = "venue-1")
-            @test location.id == "taxloc_1"
+            @test (location.id, location.type, location.description) == ("taxloc_1", "performance", "Main gym")
             @test seen[end].headers["Stripe-Version"] == SC.TAX_API_VERSION
             @test seen[end].headers["Idempotency-Key"] == "venue-1"
-            @test occursin("address%5Bline1%5D=1%20Main%20St", seen[end].body)
+            @test Set(split(seen[end].body, '&')) == Set(["type=performance", "description=Main%20gym",
+                "address%5Bline1%5D=1%20Main%20St", "address%5Bcountry%5D=US"])
 
             product = SC.create_tax_product("acct_1", "Entry", "txcd_20030000", "taxloc_1";
                 metadata = Dict("event" => "E1"))
             @test product.tax_code == "txcd_20030000"
             @test seen[end].headers["Stripe-Version"] == SC.TAX_API_VERSION
-            @test occursin("tax_details%5Btax_location%5D=taxloc_1", seen[end].body)
+            @test occursin("tax_details%5Bperformance_location%5D=taxloc_1", seen[end].body)
 
             pending = SC.create_refund(; payment_intent = "pi_1", amount = 700,
                 stripe_account = "acct_1", idempotency_key = "refund-1", refund_application_fee = true)
@@ -355,6 +356,10 @@ end
         @test_throws ErrorException SC.retrieve_account("acct_1")
         @test_throws ErrorException SC.with_stripe(() -> SC.retrieve_account("acct_1"), "")
         @test SC.with_stripe(() -> 42, "") == 42
+        # An empty key hides an outer client instead of falling back to it.
+        @test_throws ErrorException SC.with_stripe(KEY) do
+            SC.with_stripe(() -> SC.retrieve_account("acct_1"), "")
+        end
     end
 
     @testset "webhook signatures" begin

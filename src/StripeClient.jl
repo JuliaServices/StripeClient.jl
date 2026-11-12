@@ -43,15 +43,15 @@ struct Client
     timeout::Int
 end
 
-const STRIPE_CLIENT = ScopedValue{Client}()
+const STRIPE_CLIENT = ScopedValue{Union{Client,Nothing}}(nothing)
 
 """
     with_stripe(f, api_key; base_url = API_BASE_URL, timeout = 30)
 
 Run `f()` with a client for the secret key `api_key`; every request function
 called inside `f` uses it. `timeout` caps the seconds one request may take in
-all. With an empty `api_key`, `f` runs with no client, and any request in it
-throws.
+all. With an empty `api_key`, `f` runs with no client, even inside another
+`with_stripe`, and any request in it throws.
 
 ```julia
 StripeClient.with_stripe(ENV["STRIPE_SECRET_KEY"]) do
@@ -61,13 +61,14 @@ end
 """
 function with_stripe(f::F, api_key::String; base_url::String = API_BASE_URL,
                      timeout::Int = TIMEOUT_SECONDS) where {F}
-    isempty(api_key) && return f()
-    @with STRIPE_CLIENT => Client(api_key, base_url, timeout) f()
+    client = isempty(api_key) ? nothing : Client(api_key, base_url, timeout)
+    @with STRIPE_CLIENT => client f()
 end
 
-function _get_client()
-    isassigned(STRIPE_CLIENT) || error("No Stripe client set. Use `with_stripe` to set credentials.")
-    return STRIPE_CLIENT[]
+function _get_client()::Client
+    client = STRIPE_CLIENT[]
+    client === nothing && error("No Stripe client set. Use `with_stripe` to set credentials.")
+    return client
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -536,13 +537,13 @@ end
     livemode::Bool = false
 end
 
-"A place where a taxable service is performed, such as an event venue."
+"A place where a taxable service is performed, such as an event venue. `type` is `performance`."
 @defaults struct TaxLocation
     id::String
     object::String = "tax.location"
-    display_name::Union{String,Nothing} = nothing
+    description::Union{String,Nothing} = nothing
+    type::Union{String,Nothing} = nothing
     address::Union{Dict{String,Any},Nothing} = nothing
-    livemode::Bool = false
 end
 
 """
@@ -594,7 +595,8 @@ end
     retrieve_checkout_session(id; expand = String[], stripe_account = nothing) -> CheckoutSession
 
 Fetch a Checkout Session. `expand` names fields to include in full, such as
-`"total_details.breakdown"`.
+`"total_details.breakdown"`. Fields this struct keeps as ids (`payment_intent`,
+`customer`, `subscription`) cannot be expanded.
 """
 function retrieve_checkout_session(id::String; expand::Vector{String} = String[],
                                    stripe_account::Union{String,Nothing} = nothing)::CheckoutSession
@@ -806,17 +808,18 @@ function list_tax_registrations(stripe_account::String)::ListResponse{TaxRegistr
 end
 
 """
-    create_tax_location(stripe_account, display_name, address; idempotency_key = nothing) -> TaxLocation
+    create_tax_location(stripe_account, description, address; idempotency_key = nothing) -> TaxLocation
 
 Create a performance location (where a taxable service such as an event takes
 place) on a connected account. `address` holds Stripe's address fields, such as
 `:line1`, `:city`, `:state`, `:postal_code`, and `:country`.
 """
-function create_tax_location(stripe_account::String, display_name::String,
+function create_tax_location(stripe_account::String, description::String,
                              address::Dict{Symbol,Any};
                              idempotency_key::Union{String,Nothing} = nothing)::TaxLocation
     return _make_request(TaxLocation, _get_client(), "POST", "v1/tax/locations";
-        body = Dict{Symbol,Any}(:display_name => display_name, :address => address),
+        body = Dict{Symbol,Any}(:type => "performance", :description => description,
+                                :address => address),
         idempotency_key, stripe_account, stripe_version = TAX_API_VERSION)
 end
 
@@ -838,7 +841,7 @@ function create_tax_product(stripe_account::String, name::String, tax_code::Stri
             :metadata => metadata,
             :tax_details => Dict{Symbol,Any}(
                 :tax_code => tax_code,
-                :tax_location => tax_location_id,
+                :performance_location => tax_location_id,
             ),
         ),
         idempotency_key, stripe_account, stripe_version = TAX_API_VERSION)
