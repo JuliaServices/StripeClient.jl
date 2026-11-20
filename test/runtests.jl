@@ -314,35 +314,36 @@ end
         end
     end
 
-    @testset "a charge names its application fee, which the platform reads and refunds" begin
-        charges = """
-        {"object": "list", "url": "/v1/charges", "has_more": false, "data": [
-          {"id": "ch_1", "object": "charge", "amount": 5260, "amount_captured": 5260,
-           "amount_refunded": 0, "currency": "usd", "status": "succeeded", "paid": true,
-           "refunded": false, "payment_intent": "pi_1", "application_fee": "fee_1",
-           "application_fee_amount": 260, "created": 1762900000,
-           "balance_transaction": "txn_1", "outcome": {"type": "authorized"}}
-        ]}
-        """
+    @testset "a PaymentIntent names its charge, whose fee the platform reads and refunds" begin
+        intent = """{"id": "pi_1", "object": "payment_intent", "status": "succeeded", "amount": 5260,
+                     "amount_received": 5260, "currency": "usd", "latest_charge": "ch_1",
+                     "application_fee_amount": 260, "metadata": {"group": "G1"},
+                     "payment_method_types": ["card"]}"""
+        charge = """{"id": "ch_1", "object": "charge", "amount": 5260, "amount_captured": 5260,
+                     "amount_refunded": 0, "currency": "usd", "status": "succeeded", "paid": true,
+                     "refunded": false, "payment_intent": "pi_1", "application_fee": "fee_1",
+                     "application_fee_amount": 260, "created": 1762900000,
+                     "balance_transaction": "txn_1", "outcome": {"type": "authorized"}}"""
         fee = """{"id": "fee_1", "object": "application_fee", "amount": 260, "amount_refunded": 130,
                   "refunded": false, "currency": "usd", "account": "acct_1", "charge": "ch_1",
                   "created": 1762900000, "refunds": {"object": "list", "data": []}}"""
         fee_refund = """{"id": "fr_1", "object": "fee_refund", "amount": 130, "currency": "usd",
                          "fee": "fee_1", "created": 1762900100, "metadata": {"payment": "P1"},
                          "balance_transaction": "txn_2"}"""
-        answers = Dict("/v1/charges" => charges, "/v1/application_fees/fee_1" => fee,
+        answers = Dict("/v1/payment_intents/pi_1" => intent, "/v1/charges/ch_1" => charge,
+                       "/v1/application_fees/fee_1" => fee,
                        "/v1/application_fees/fee_1/refunds" => fee_refund)
         with_stub((method, target) -> (200, answers[first(split(target, '?'))])) do seen
-            charge = only(SC.list_charges(; payment_intent = "pi_1", stripe_account = "acct_1").data)
-            @test seen[1].method == "GET"
-            @test occursin("payment_intent=pi_1", seen[1].target)
+            payment = SC.retrieve_payment_intent("pi_1"; stripe_account = "acct_1")
+            @test (seen[1].method, seen[1].target) == ("GET", "/v1/payment_intents/pi_1")
             @test seen[1].headers["Stripe-Account"] == "acct_1"
-            @test (charge.status, charge.application_fee, charge.application_fee_amount) ==
-                  ("succeeded", "fee_1", 260)
-            SC.list_charges("pi_1", "acct_1", 1, "ch_2")
-            @test occursin("starting_after=ch_2", seen[2].target)
-            @test occursin("limit=1", seen[2].target)
+            @test (payment.status, payment.latest_charge, payment.application_fee_amount) ==
+                  ("succeeded", "ch_1", 260)
+            paid = SC.retrieve_charge(payment.latest_charge, "acct_1")
+            @test (seen[2].method, seen[2].target) == ("GET", "/v1/charges/ch_1")
             @test seen[2].headers["Stripe-Account"] == "acct_1"
+            @test (paid.status, paid.application_fee, paid.application_fee_amount) ==
+                  ("succeeded", "fee_1", 260)
 
             platform_fee = SC.retrieve_application_fee("fee_1")
             @test (seen[3].method, seen[3].target) == ("GET", "/v1/application_fees/fee_1")
@@ -363,29 +364,6 @@ end
             SC.create_application_fee_refund("fee_1", 40, "P2-fee", Dict{String,String}())
             @test seen[6].body == "amount=40"
             @test seen[6].headers["Idempotency-Key"] == "P2-fee"
-        end
-    end
-
-    @testset "succeeded_charge looks through every page of charges" begin
-        charge(id, status; captured = true, amount_captured = 500) = """{"id": "$id", "object": "charge",
-            "status": "$status", "captured": $captured, "amount_captured": $amount_captured,
-            "application_fee": "fee_$id"}"""
-        # An authorization not captured yet has collected nothing, though Stripe calls it succeeded.
-        first_page = """{"object": "list", "has_more": true, "data": [$(charge("ch_3", "failed"; amount_captured = 0)),
-            $(charge("ch_2", "succeeded"; captured = false, amount_captured = 0))]}"""
-        # A partial capture has collected money before its last capture.
-        second_page = """{"object": "list", "has_more": false, "data": [$(charge("ch_1", "succeeded"; captured = false))]}"""
-        with_stub((method, target) -> (200, occursin("starting_after=ch_2", target) ? second_page : first_page)) do seen
-            found = SC.succeeded_charge("pi_1"; stripe_account = "acct_1")
-            @test found.id == "ch_1"
-            @test found.application_fee == "fee_ch_1"
-            @test length(seen) == 2
-            @test all(r -> r.headers["Stripe-Account"] == "acct_1", seen)
-        end
-        with_stub(ok("""{"object": "list", "has_more": false, "data": []}""")) do seen
-            @test SC.succeeded_charge("pi_2") === nothing
-            @test SC.succeeded_charge("pi_2", "acct_2") === nothing
-            @test seen[2].headers["Stripe-Account"] == "acct_2"
         end
     end
 

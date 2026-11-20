@@ -17,18 +17,6 @@ function attempt(name::String, f::F)::Bool where {F}
     end
 end
 
-# A caller's own page loop, whose cursor is `nothing` and then a charge id.
-function charge_pages(payment_intent::String)::Int
-    pages = 0
-    cursor = nothing
-    while true
-        page = SC.list_charges(payment_intent, "acct_1", 100, cursor)
-        pages += 1
-        page.has_more || return pages
-        cursor = last(page.data).id
-    end
-end
-
 # The positional forms, with values that are `nothing` or not only at runtime,
 # as a caller's own optional values are.
 function optional_requests(account::Union{String,Nothing}, amount::Union{Int,Nothing},
@@ -36,7 +24,8 @@ function optional_requests(account::Union{String,Nothing}, amount::Union{Int,Not
     passed = 0
     passed += attempt("list_checkout_session_line_items positional",
         () -> SC.list_checkout_session_line_items("cs_1", account, 100, key))
-    passed += attempt("succeeded_charge positional", () -> SC.succeeded_charge("pi_1", account))
+    passed += attempt("retrieve_payment_intent positional", () -> SC.retrieve_payment_intent("pi_1", account))
+    passed += attempt("retrieve_charge positional", () -> SC.retrieve_charge("ch_1", account))
     passed += attempt("create_application_fee_refund positional",
         () -> SC.create_application_fee_refund("fee_1", amount, key, Dict{String,String}()))
     return passed
@@ -59,10 +48,8 @@ function requests()::Int
     passed += attempt("retrieve_refund", () -> SC.retrieve_refund("re_1"))
     passed += attempt("list_refunds", () -> SC.list_refunds(; payment_intent = "pi_1"))
     passed += attempt("refunded_total", () -> SC.refunded_total("pi_1"; stripe_account = "acct_1"))
-    passed += attempt("list_charges", () -> SC.list_charges(; payment_intent = "pi_1",
-        stripe_account = "acct_1"))
-    passed += attempt("list_charges pages", () -> charge_pages("pi_1"))
-    passed += attempt("succeeded_charge", () -> SC.succeeded_charge("pi_1"; stripe_account = "acct_1"))
+    passed += attempt("retrieve_payment_intent", () -> SC.retrieve_payment_intent("pi_1"; stripe_account = "acct_1"))
+    passed += attempt("retrieve_charge", () -> SC.retrieve_charge("ch_1"; stripe_account = "acct_1"))
     passed += attempt("retrieve_application_fee", () -> SC.retrieve_application_fee("fee_1"))
     passed += attempt("create_application_fee_refund", () -> SC.create_application_fee_refund(
         "fee_1"; amount = 130, idempotency_key = "f", metadata = Dict("payment" => "P1")))

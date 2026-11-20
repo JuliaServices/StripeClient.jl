@@ -483,6 +483,22 @@ One line of a Checkout Session. Amounts are in the smallest currency unit, and
 end
 
 """
+A PaymentIntent. Once `status` is `succeeded`, `latest_charge` is the id of the
+charge that collected its money ([`retrieve_charge`](@ref)).
+"""
+@defaults struct PaymentIntent
+    id::String
+    object::String = "payment_intent"
+    status::Union{String,Nothing} = nothing
+    amount::Union{Int,Nothing} = nothing
+    amount_received::Union{Int,Nothing} = nothing
+    currency::Union{String,Nothing} = nothing
+    latest_charge::Union{String,Nothing} = nothing
+    application_fee_amount::Union{Int,Nothing} = nothing
+    metadata::Union{Dict{String,String},Nothing} = nothing
+end
+
+"""
 A charge: one attempt to collect a PaymentIntent's money. On a direct charge it
 lives on the connected account, and `application_fee` is the id of the
 platform's fee on it ([`retrieve_application_fee`](@ref)). Stripe can create that
@@ -494,14 +510,9 @@ taking it to mean there is no fee. `status` is `succeeded`, `pending`, or `faile
     id::String
     object::String = "charge"
     amount::Union{Int,Nothing} = nothing
-    amount_captured::Union{Int,Nothing} = nothing
     amount_refunded::Union{Int,Nothing} = nothing
     currency::Union{String,Nothing} = nothing
     status::Union{String,Nothing} = nothing
-    paid::Union{Bool,Nothing} = nothing
-    "`false` until the charge's last capture: `amount_captured` says what it has collected so far."
-    captured::Union{Bool,Nothing} = nothing
-    refunded::Union{Bool,Nothing} = nothing
     payment_intent::Union{String,Nothing} = nothing
     application_fee::Union{String,Nothing} = nothing
     application_fee_amount::Union{Int,Nothing} = nothing
@@ -814,56 +825,29 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 
 """
-    list_charges(; payment_intent, stripe_account = nothing, limit = 10,
-                 starting_after = nothing) -> ListResponse{Charge}
-    list_charges(payment_intent, stripe_account, limit, starting_after) -> ListResponse{Charge}
+    retrieve_payment_intent(id; stripe_account = nothing) -> PaymentIntent
+    retrieve_payment_intent(id, stripe_account) -> PaymentIntent
 
-One page of a PaymentIntent's charges, newest first, on the account that owns
-them. A paid PaymentIntent's money, and on a direct charge the platform's fee,
-are on its `succeeded`, captured charge ([`succeeded_charge`](@ref)).
-
-Pass a value that can be `nothing` at runtime, such as a page loop's cursor, with
-the positional form (see Trimming in the README).
+Fetch a PaymentIntent, on the connected account for a direct charge.
 """
-function list_charges(; payment_intent::String, stripe_account::Union{String,Nothing} = nothing,
-                      limit::Int = 10,
-                      starting_after::Union{String,Nothing} = nothing)::ListResponse{Charge}
-    return list_charges(payment_intent, stripe_account, limit, starting_after)
+retrieve_payment_intent(id::String; stripe_account::Union{String,Nothing} = nothing) =
+    retrieve_payment_intent(id, stripe_account)
+
+function retrieve_payment_intent(id::String, stripe_account::Union{String,Nothing})::PaymentIntent
+    return _make_request(PaymentIntent, _get_client(), "GET", "v1/payment_intents/$id"; stripe_account)
 end
 
 """
-    succeeded_charge(payment_intent; stripe_account = nothing) -> Union{Charge,Nothing}
-    succeeded_charge(payment_intent, stripe_account) -> Union{Charge,Nothing}
+    retrieve_charge(id; stripe_account = nothing) -> Charge
+    retrieve_charge(id, stripe_account) -> Charge
 
-The PaymentIntent's `succeeded` charge that has collected money, which holds that
-money and, on a direct charge, the platform's fee, looking through every page of
-its charges. `nothing` when it has none yet, as while a card authorization waits
-to be captured.
+Fetch a charge, on the connected account for a direct charge.
 """
-succeeded_charge(payment_intent::String; stripe_account::Union{String,Nothing} = nothing) =
-    succeeded_charge(payment_intent, stripe_account)
+retrieve_charge(id::String; stripe_account::Union{String,Nothing} = nothing) =
+    retrieve_charge(id, stripe_account)
 
-function succeeded_charge(payment_intent::String,
-                          stripe_account::Union{String,Nothing})::Union{Charge,Nothing}
-    cursor = nothing
-    while true
-        page = list_charges(payment_intent, stripe_account, 100, cursor)
-        for charge in page.data
-            lowercase(something(charge.status, "")) == "succeeded" &&
-                something(charge.amount_captured, 0) > 0 && return charge
-        end
-        page.has_more || return nothing
-        isempty(page.data) && error("Stripe charge pagination returned has_more without data")
-        cursor = last(page.data).id
-    end
-end
-
-function list_charges(payment_intent::String, stripe_account::Union{String,Nothing},
-                      limit::Int, starting_after::Union{String,Nothing})::ListResponse{Charge}
-    query = Dict{Symbol,Any}(:payment_intent => payment_intent, :limit => limit)
-    starting_after !== nothing && (query[:starting_after] = starting_after)
-    return _make_request(ListResponse{Charge}, _get_client(), "GET", "v1/charges";
-                         query, stripe_account)
+function retrieve_charge(id::String, stripe_account::Union{String,Nothing})::Charge
+    return _make_request(Charge, _get_client(), "GET", "v1/charges/$id"; stripe_account)
 end
 
 """

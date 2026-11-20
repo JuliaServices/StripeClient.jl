@@ -36,7 +36,7 @@ fields a dictionary turns into).
 
 Request functions: `create_checkout_session`, `retrieve_checkout_session`,
 `expire_checkout_session`, `list_checkout_session_line_items`, `create_refund`,
-`retrieve_refund`, `list_refunds`, `refunded_total`, `list_charges`, `succeeded_charge`,
+`retrieve_refund`, `list_refunds`, `refunded_total`, `retrieve_payment_intent`, `retrieve_charge`,
 `retrieve_application_fee`, `create_application_fee_refund`, `create_account`,
 `retrieve_account`, `create_account_link`,
 `create_login_link`, `oauth_token`, `create_tax_account_session`,
@@ -72,9 +72,8 @@ builds and runs `test/trim/main.jl` to keep it that way. On Julia 1.13 the
 verifier rejects Base's ScopedValues update, which `with_stripe` uses.
 
 A keyword argument whose value can be `nothing` at runtime, such as a page loop's
-cursor or an optional amount, makes the call fail the verifier. The charge, line
-item, and application fee calls have a positional form for that:
-`list_charges(payment_intent, stripe_account, limit, starting_after)`,
-`list_checkout_session_line_items(id, stripe_account, limit, starting_after)`,
-`succeeded_charge(payment_intent, stripe_account)`, and
+cursor or an optional amount, makes the call fail the verifier. The PaymentIntent,
+charge, line item, and application fee calls have a positional form for that:
+`retrieve_payment_intent(id, stripe_account)`, `retrieve_charge(id, stripe_account)`,
+`list_checkout_session_line_items(id, stripe_account, limit, starting_after)`, and
 `create_application_fee_refund(fee_id, amount, idempotency_key, metadata)`.
