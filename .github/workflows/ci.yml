@@ -20,6 +20,17 @@ jobs:
       matrix:
         version: ['1', 'min', 'pre']
         os: [ubuntu-latest, windows-latest, macOS-latest]
+        # Julia 1.10.0's libopenlibm.so asks for an executable stack, which the
+        # newer glibc on ubuntu-latest refuses to load ("cannot enable
+        # executable stack as shared object requires: Invalid argument"). The
+        # compat floor (min) still runs on macOS and Windows; Linux runs the
+        # current 1.10.x (lts) instead.
+        exclude:
+          - version: 'min'
+            os: ubuntu-latest
+        include:
+          - version: 'lts'
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
