@@ -499,6 +499,8 @@ taking it to mean there is no fee. `status` is `succeeded`, `pending`, or `faile
     currency::Union{String,Nothing} = nothing
     status::Union{String,Nothing} = nothing
     paid::Union{Bool,Nothing} = nothing
+    "`false` for a card authorization not captured yet: no money has moved."
+    captured::Union{Bool,Nothing} = nothing
     refunded::Union{Bool,Nothing} = nothing
     payment_intent::Union{String,Nothing} = nothing
     application_fee::Union{String,Nothing} = nothing
@@ -817,7 +819,7 @@ end
 
 One page of a PaymentIntent's charges, newest first, on the account that owns
 them. A paid PaymentIntent's money, and on a direct charge the platform's fee,
-are on its `succeeded` charge.
+are on its `succeeded`, captured charge ([`succeeded_charge`](@ref)).
 """
 function list_charges(; payment_intent::String, stripe_account::Union{String,Nothing} = nothing,
                       limit::Int = 10,
@@ -828,9 +830,10 @@ end
 """
     succeeded_charge(payment_intent; stripe_account = nothing) -> Union{Charge,Nothing}
 
-The PaymentIntent's `succeeded` charge, which holds its money and, on a direct
-charge, the platform's fee, looking through every page of its charges. `nothing`
-when it has none yet.
+The PaymentIntent's `succeeded`, captured charge, which holds its money and, on a
+direct charge, the platform's fee, looking through every page of its charges.
+`nothing` when it has none yet, as while a card authorization waits to be
+captured.
 """
 function succeeded_charge(payment_intent::String;
                           stripe_account::Union{String,Nothing} = nothing)::Union{Charge,Nothing}
@@ -838,7 +841,8 @@ function succeeded_charge(payment_intent::String;
     while true
         page = _list_charges(payment_intent, stripe_account, 100, cursor)
         for charge in page.data
-            lowercase(something(charge.status, "")) == "succeeded" && return charge
+            lowercase(something(charge.status, "")) == "succeeded" && charge.captured === true &&
+                return charge
         end
         page.has_more || return nothing
         isempty(page.data) && error("Stripe charge pagination returned has_more without data")

@@ -360,8 +360,11 @@ end
     end
 
     @testset "succeeded_charge looks through every page of charges" begin
-        charge(id, status) = """{"id": "$id", "object": "charge", "status": "$status", "application_fee": "fee_$id"}"""
-        first_page = """{"object": "list", "has_more": true, "data": [$(charge("ch_3", "failed")), $(charge("ch_2", "failed"))]}"""
+        charge(id, status; captured = true) = """{"id": "$id", "object": "charge", "status": "$status",
+            "captured": $captured, "application_fee": "fee_$id"}"""
+        # An authorization not captured yet has moved no money, though Stripe calls it succeeded.
+        first_page = """{"object": "list", "has_more": true, "data": [$(charge("ch_3", "failed")),
+            $(charge("ch_2", "succeeded"; captured = false))]}"""
         second_page = """{"object": "list", "has_more": false, "data": [$(charge("ch_1", "succeeded"))]}"""
         with_stub((method, target) -> (200, occursin("starting_after=ch_2", target) ? second_page : first_page)) do seen
             found = SC.succeeded_charge("pi_1"; stripe_account = "acct_1")
