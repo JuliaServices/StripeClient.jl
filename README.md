@@ -36,7 +36,7 @@ fields a dictionary turns into).
 
 Request functions: `create_checkout_session`, `retrieve_checkout_session`,
 `expire_checkout_session`, `list_checkout_session_line_items`, `create_refund`,
-`retrieve_refund`, `list_refunds`, `refunded_total`, `list_charges`,
+`retrieve_refund`, `list_refunds`, `refunded_total`, `list_charges`, `succeeded_charge`,
 `retrieve_application_fee`, `create_application_fee_refund`, `create_account`,
 `retrieve_account`, `create_account_link`,
 `create_login_link`, `oauth_token`, `create_tax_account_session`,

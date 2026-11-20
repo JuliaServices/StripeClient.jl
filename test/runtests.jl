@@ -359,6 +359,22 @@ end
         end
     end
 
+    @testset "succeeded_charge looks through every page of charges" begin
+        charge(id, status) = """{"id": "$id", "object": "charge", "status": "$status", "application_fee": "fee_$id"}"""
+        first_page = """{"object": "list", "has_more": true, "data": [$(charge("ch_3", "failed")), $(charge("ch_2", "failed"))]}"""
+        second_page = """{"object": "list", "has_more": false, "data": [$(charge("ch_1", "succeeded"))]}"""
+        with_stub((method, target) -> (200, occursin("starting_after=ch_2", target) ? second_page : first_page)) do seen
+            found = SC.succeeded_charge("pi_1"; stripe_account = "acct_1")
+            @test found.id == "ch_1"
+            @test found.application_fee == "fee_ch_1"
+            @test length(seen) == 2
+            @test all(r -> r.headers["Stripe-Account"] == "acct_1", seen)
+        end
+        with_stub(ok("""{"object": "list", "has_more": false, "data": []}""")) do seen
+            @test SC.succeeded_charge("pi_2") === nothing
+        end
+    end
+
     @testset "refunded_total sums succeeded refunds across pages" begin
         first_page = refund_page(true, refund("re_1", "succeeded", 500), refund("re_2", "failed", 300))
         last_page = refund_page(false, refund("re_3", "succeeded", 200), refund("re_4", "pending", 100))

@@ -825,6 +825,27 @@ function list_charges(; payment_intent::String, stripe_account::Union{String,Not
     return _list_charges(payment_intent, stripe_account, limit, starting_after)
 end
 
+"""
+    succeeded_charge(payment_intent; stripe_account = nothing) -> Union{Charge,Nothing}
+
+The PaymentIntent's `succeeded` charge, which holds its money and, on a direct
+charge, the platform's fee, looking through every page of its charges. `nothing`
+when it has none yet.
+"""
+function succeeded_charge(payment_intent::String;
+                          stripe_account::Union{String,Nothing} = nothing)::Union{Charge,Nothing}
+    cursor = nothing
+    while true
+        page = _list_charges(payment_intent, stripe_account, 100, cursor)
+        for charge in page.data
+            lowercase(something(charge.status, "")) == "succeeded" && return charge
+        end
+        page.has_more || return nothing
+        isempty(page.data) && error("Stripe charge pagination returned has_more without data")
+        cursor = last(page.data).id
+    end
+end
+
 # Positional for the same reason as `_list_refunds`.
 function _list_charges(payment_intent::String, stripe_account::Union{String,Nothing},
                        limit::Int, starting_after::Union{String,Nothing})::ListResponse{Charge}

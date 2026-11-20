@@ -36,6 +36,7 @@ function requests()::Int
     passed += attempt("refunded_total", () -> SC.refunded_total("pi_1"; stripe_account = "acct_1"))
     passed += attempt("list_charges", () -> SC.list_charges(; payment_intent = "pi_1",
         stripe_account = "acct_1"))
+    passed += attempt("succeeded_charge", () -> SC.succeeded_charge("pi_1"; stripe_account = "acct_1"))
     passed += attempt("retrieve_application_fee", () -> SC.retrieve_application_fee("fee_1"))
     passed += attempt("create_application_fee_refund", () -> SC.create_application_fee_refund(
         "fee_1"; amount = 130, idempotency_key = "f", metadata = Dict("payment" => "P1")))
@@ -70,9 +71,9 @@ function (@main)(args::Vector{String})::Cint
     catch e
         e isa SC.SignatureVerificationError
     end
-    println(Core.stdout, "requests ended in ConnectionError: ", passed, " of 20")
+    println(Core.stdout, "requests ended in ConnectionError: ", passed, " of 21")
     println(Core.stdout, "webhook event: ", event.type, ", wrong secret rejected: ", rejected)
     message = SC.permanent_request_error_message(SC.ConnectionError("x"))
     println(Core.stdout, "permanent message for a ConnectionError: ", message === nothing ? "none" : message)
-    return passed == 20 && rejected ? 0 : 1
+    return passed == 21 && rejected ? 0 : 1
 end
