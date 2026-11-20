@@ -753,20 +753,29 @@ end
 
 """
     create_refund(; payment_intent, amount = nothing, stripe_account = nothing,
-                  idempotency_key = nothing, refund_application_fee = false) -> Refund
+                  idempotency_key = nothing, refund_application_fee = false,
+                  metadata = Dict{String,String}()) -> Refund
 
 Refund a PaymentIntent in full (`amount = nothing`) or in part (`amount` in the
 smallest currency unit). For a direct charge, pass the connected account as
 `stripe_account`. `refund_application_fee = true` also returns the platform's
 application fee to the connected account, in proportion for a partial refund.
+
+`metadata` stays on the refund, so a caller can find its own refund again in
+[`list_refunds`](@ref), for example the caller's id for the refund. That works
+even after Stripe has forgotten the request's idempotency key (24 hours), when a
+lost response would otherwise leave the caller unable to tell its refund from
+one made in the Dashboard.
 """
 function create_refund(; payment_intent::String, amount::Union{Int,Nothing} = nothing,
                        stripe_account::Union{String,Nothing} = nothing,
                        idempotency_key::Union{String,Nothing} = nothing,
-                       refund_application_fee::Bool = false)::Refund
+                       refund_application_fee::Bool = false,
+                       metadata::Dict{String,String} = Dict{String,String}())::Refund
     body = Dict{Symbol,Any}(:payment_intent => payment_intent)
     amount !== nothing && (body[:amount] = amount)
     refund_application_fee && (body[:refund_application_fee] = true)
+    isempty(metadata) || (body[:metadata] = metadata)
     return _make_request(Refund, _get_client(), "POST", "v1/refunds";
                          body, idempotency_key, stripe_account)
 end

@@ -44,7 +44,8 @@ function requests()::Int
     passed += attempt("list_checkout_session_line_items",
         () -> SC.list_checkout_session_line_items("cs_1"; stripe_account = "acct_1"))
     passed += attempt("create_refund", () -> SC.create_refund(; payment_intent = "pi_1",
-        amount = 100, stripe_account = "acct_1", idempotency_key = "r", refund_application_fee = true))
+        amount = 100, stripe_account = "acct_1", idempotency_key = "r", refund_application_fee = true,
+        metadata = Dict("attempt" => "a1")))
     passed += attempt("retrieve_refund", () -> SC.retrieve_refund("re_1"))
     passed += attempt("list_refunds", () -> SC.list_refunds(; payment_intent = "pi_1"))
     passed += attempt("refunded_total", () -> SC.refunded_total("pi_1"; stripe_account = "acct_1"))
