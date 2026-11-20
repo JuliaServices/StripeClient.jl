@@ -27,11 +27,18 @@ function requests()::Int
     passed += attempt("retrieve_checkout_session",
         () -> SC.retrieve_checkout_session("cs_1"; expand = ["total_details.breakdown"]))
     passed += attempt("expire_checkout_session", () -> SC.expire_checkout_session("cs_1"))
+    passed += attempt("list_checkout_session_line_items",
+        () -> SC.list_checkout_session_line_items("cs_1"; stripe_account = "acct_1"))
     passed += attempt("create_refund", () -> SC.create_refund(; payment_intent = "pi_1",
         amount = 100, stripe_account = "acct_1", idempotency_key = "r", refund_application_fee = true))
     passed += attempt("retrieve_refund", () -> SC.retrieve_refund("re_1"))
     passed += attempt("list_refunds", () -> SC.list_refunds(; payment_intent = "pi_1"))
     passed += attempt("refunded_total", () -> SC.refunded_total("pi_1"; stripe_account = "acct_1"))
+    passed += attempt("list_charges", () -> SC.list_charges(; payment_intent = "pi_1",
+        stripe_account = "acct_1"))
+    passed += attempt("retrieve_application_fee", () -> SC.retrieve_application_fee("fee_1"))
+    passed += attempt("create_application_fee_refund", () -> SC.create_application_fee_refund(
+        "fee_1"; amount = 130, idempotency_key = "f", metadata = Dict("payment" => "P1")))
     passed += attempt("create_account", () -> SC.create_account(Dict{Symbol,Any}(:type => "express")))
     passed += attempt("retrieve_account", () -> SC.retrieve_account("acct_1"))
     passed += attempt("create_account_link", () -> SC.create_account_link(; account = "acct_1",
@@ -63,9 +70,9 @@ function (@main)(args::Vector{String})::Cint
     catch e
         e isa SC.SignatureVerificationError
     end
-    println(Core.stdout, "requests ended in ConnectionError: ", passed, " of 16")
+    println(Core.stdout, "requests ended in ConnectionError: ", passed, " of 20")
     println(Core.stdout, "webhook event: ", event.type, ", wrong secret rejected: ", rejected)
     message = SC.permanent_request_error_message(SC.ConnectionError("x"))
     println(Core.stdout, "permanent message for a ConnectionError: ", message === nothing ? "none" : message)
-    return passed == 16 && rejected ? 0 : 1
+    return passed == 20 && rejected ? 0 : 1
 end

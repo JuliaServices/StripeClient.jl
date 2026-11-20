@@ -2,9 +2,10 @@
 
 [![CI](https://github.com/JuliaServices/StripeClient.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/JuliaServices/StripeClient.jl/actions/workflows/ci.yml)
 
-Call Stripe's API from a Julia server: Checkout Sessions, refunds, Connect
-accounts (onboarding links, dashboard links, OAuth), Stripe Tax for connected
-accounts, and webhook signature checks. Answers parse into typed structs.
+Call Stripe's API from a Julia server: Checkout Sessions and their line items,
+refunds, charges and application fees, Connect accounts (onboarding links,
+dashboard links, OAuth), Stripe Tax for connected accounts, and webhook signature
+checks. Answers parse into typed structs.
 
 It covers the slice of Stripe that a platform taking payments for other
 businesses needs, and grows as callers need more.
@@ -34,8 +35,10 @@ vectors become Stripe's bracket notation (`StripeClient.form_params` shows the
 fields a dictionary turns into).
 
 Request functions: `create_checkout_session`, `retrieve_checkout_session`,
-`expire_checkout_session`, `create_refund`, `retrieve_refund`, `list_refunds`,
-`refunded_total`, `create_account`, `retrieve_account`, `create_account_link`,
+`expire_checkout_session`, `list_checkout_session_line_items`, `create_refund`,
+`retrieve_refund`, `list_refunds`, `refunded_total`, `list_charges`,
+`retrieve_application_fee`, `create_application_fee_refund`, `create_account`,
+`retrieve_account`, `create_account_link`,
 `create_login_link`, `oauth_token`, `create_tax_account_session`,
 `retrieve_tax_settings`, `list_tax_registrations`, `create_tax_location`, and
 `create_tax_product`.
