@@ -17,6 +17,18 @@ function attempt(name::String, f::F)::Bool where {F}
     end
 end
 
+# A caller's own page loop, whose cursor is `nothing` and then a charge id.
+function charge_pages(payment_intent::String)::Int
+    pages = 0
+    cursor = nothing
+    while true
+        page = SC.list_charges(payment_intent, "acct_1", 100, cursor)
+        pages += 1
+        page.has_more || return pages
+        cursor = last(page.data).id
+    end
+end
+
 function requests()::Int
     params = Dict{Symbol,Any}(:mode => "payment", :success_url => "https://example.com/paid",
         :expand => ["total_details.breakdown"], :metadata => Dict("order" => "42"),
@@ -36,6 +48,7 @@ function requests()::Int
     passed += attempt("refunded_total", () -> SC.refunded_total("pi_1"; stripe_account = "acct_1"))
     passed += attempt("list_charges", () -> SC.list_charges(; payment_intent = "pi_1",
         stripe_account = "acct_1"))
+    passed += attempt("list_charges pages", () -> charge_pages("pi_1"))
     passed += attempt("succeeded_charge", () -> SC.succeeded_charge("pi_1"; stripe_account = "acct_1"))
     passed += attempt("retrieve_application_fee", () -> SC.retrieve_application_fee("fee_1"))
     passed += attempt("create_application_fee_refund", () -> SC.create_application_fee_refund(
@@ -71,9 +84,9 @@ function (@main)(args::Vector{String})::Cint
     catch e
         e isa SC.SignatureVerificationError
     end
-    println(Core.stdout, "requests ended in ConnectionError: ", passed, " of 21")
+    println(Core.stdout, "requests ended in ConnectionError: ", passed, " of 22")
     println(Core.stdout, "webhook event: ", event.type, ", wrong secret rejected: ", rejected)
     message = SC.permanent_request_error_message(SC.ConnectionError("x"))
     println(Core.stdout, "permanent message for a ConnectionError: ", message === nothing ? "none" : message)
-    return passed == 21 && rejected ? 0 : 1
+    return passed == 22 && rejected ? 0 : 1
 end

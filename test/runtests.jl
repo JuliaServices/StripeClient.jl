@@ -336,9 +336,10 @@ end
             @test seen[1].headers["Stripe-Account"] == "acct_1"
             @test (charge.status, charge.application_fee, charge.application_fee_amount) ==
                   ("succeeded", "fee_1", 260)
-            SC.list_charges(; payment_intent = "pi_1", limit = 1, starting_after = "ch_2")
+            SC.list_charges("pi_1", "acct_1", 1, "ch_2")
             @test occursin("starting_after=ch_2", seen[2].target)
             @test occursin("limit=1", seen[2].target)
+            @test seen[2].headers["Stripe-Account"] == "acct_1"
 
             platform_fee = SC.retrieve_application_fee("fee_1")
             @test (seen[3].method, seen[3].target) == ("GET", "/v1/application_fees/fee_1")

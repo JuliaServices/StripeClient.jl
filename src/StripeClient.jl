@@ -816,15 +816,20 @@ end
 """
     list_charges(; payment_intent, stripe_account = nothing, limit = 10,
                  starting_after = nothing) -> ListResponse{Charge}
+    list_charges(payment_intent, stripe_account, limit, starting_after) -> ListResponse{Charge}
 
 One page of a PaymentIntent's charges, newest first, on the account that owns
 them. A paid PaymentIntent's money, and on a direct charge the platform's fee,
 are on its `succeeded`, captured charge ([`succeeded_charge`](@ref)).
+
+Page through the charges with the positional form: a loop that passes `nothing`
+for the first page and the last charge's `id` after it compiles with
+`juliac --trim=safe` only that way.
 """
 function list_charges(; payment_intent::String, stripe_account::Union{String,Nothing} = nothing,
                       limit::Int = 10,
                       starting_after::Union{String,Nothing} = nothing)::ListResponse{Charge}
-    return _list_charges(payment_intent, stripe_account, limit, starting_after)
+    return list_charges(payment_intent, stripe_account, limit, starting_after)
 end
 
 """
@@ -839,7 +844,7 @@ function succeeded_charge(payment_intent::String;
                           stripe_account::Union{String,Nothing} = nothing)::Union{Charge,Nothing}
     cursor = nothing
     while true
-        page = _list_charges(payment_intent, stripe_account, 100, cursor)
+        page = list_charges(payment_intent, stripe_account, 100, cursor)
         for charge in page.data
             lowercase(something(charge.status, "")) == "succeeded" && charge.captured === true &&
                 return charge
@@ -850,9 +855,8 @@ function succeeded_charge(payment_intent::String;
     end
 end
 
-# Positional for the same reason as `_list_refunds`.
-function _list_charges(payment_intent::String, stripe_account::Union{String,Nothing},
-                       limit::Int, starting_after::Union{String,Nothing})::ListResponse{Charge}
+function list_charges(payment_intent::String, stripe_account::Union{String,Nothing},
+                      limit::Int, starting_after::Union{String,Nothing})::ListResponse{Charge}
     query = Dict{Symbol,Any}(:payment_intent => payment_intent, :limit => limit)
     starting_after !== nothing && (query[:starting_after] = starting_after)
     return _make_request(ListResponse{Charge}, _get_client(), "GET", "v1/charges";
