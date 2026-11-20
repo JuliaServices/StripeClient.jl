@@ -265,6 +265,9 @@ end
                 Set(["payment_intent=pi_1", "amount=700", "refund_application_fee=true"])
             SC.create_refund(; payment_intent = "pi_1")
             @test seen[end].body == "payment_intent=pi_1"
+            SC.create_refund(; payment_intent = "pi_1", amount = 300, metadata = Dict("attempt" => "a1"))
+            @test Set(split(seen[end].body, '&')) ==
+                Set(["payment_intent=pi_1", "amount=300", "metadata%5Battempt%5D=a1"])
 
             @test SC.retrieve_refund("re_1"; stripe_account = "acct_1").status == "succeeded"
         end
