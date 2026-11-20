@@ -24,6 +24,12 @@ The Stripe API version that tax locations and tax products are created with: the
 first version that accepts their performance-location fields.
 """
 const TAX_API_VERSION = "2025-05-28.basil"
+"""
+The Stripe API version that PaymentIntents are read with: the first version that
+returns `latest_charge`. An account whose default version is older gets its
+charges in a list instead.
+"""
+const PAYMENT_INTENT_API_VERSION = "2022-11-15"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Client
@@ -834,7 +840,8 @@ retrieve_payment_intent(id::String; stripe_account::Union{String,Nothing} = noth
     retrieve_payment_intent(id, stripe_account)
 
 function retrieve_payment_intent(id::String, stripe_account::Union{String,Nothing})::PaymentIntent
-    return _make_request(PaymentIntent, _get_client(), "GET", "v1/payment_intents/$id"; stripe_account)
+    return _make_request(PaymentIntent, _get_client(), "GET", "v1/payment_intents/$id";
+                         stripe_account, stripe_version = PAYMENT_INTENT_API_VERSION)
 end
 
 """

@@ -337,6 +337,8 @@ end
             payment = SC.retrieve_payment_intent("pi_1"; stripe_account = "acct_1")
             @test (seen[1].method, seen[1].target) == ("GET", "/v1/payment_intents/pi_1")
             @test seen[1].headers["Stripe-Account"] == "acct_1"
+            # Pinned, so an account on an older default version still gets `latest_charge`.
+            @test seen[1].headers["Stripe-Version"] == SC.PAYMENT_INTENT_API_VERSION
             @test (payment.status, payment.latest_charge, payment.application_fee_amount) ==
                   ("succeeded", "ch_1", 260)
             paid = SC.retrieve_charge(payment.latest_charge, "acct_1")
