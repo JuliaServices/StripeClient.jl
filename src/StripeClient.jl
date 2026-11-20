@@ -889,6 +889,11 @@ own account makes this call, so it takes no `stripe_account`.
 [`create_refund`](@ref) with `refund_application_fee = true` gives the fee back
 in proportion to the refund. This gives back an exact amount, as when one charge
 paid for several things and only one of them is refunded.
+
+Keep the customer's refunds and the fee's refunds separate for a payment that
+uses multicapture: Stripe refuses a partial refund there with
+`refund_application_fee = true`, and once this call has refunded part of its fee,
+any later refund with that flag.
 """
 create_application_fee_refund(fee_id::String; amount::Union{Int,Nothing} = nothing,
                               idempotency_key::Union{String,Nothing} = nothing,
