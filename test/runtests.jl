@@ -336,23 +336,26 @@ end
             @test seen[1].headers["Stripe-Account"] == "acct_1"
             @test (charge.status, charge.application_fee, charge.application_fee_amount) ==
                   ("succeeded", "fee_1", 260)
+            SC.list_charges(; payment_intent = "pi_1", limit = 1, starting_after = "ch_2")
+            @test occursin("starting_after=ch_2", seen[2].target)
+            @test occursin("limit=1", seen[2].target)
 
             platform_fee = SC.retrieve_application_fee("fee_1")
-            @test (seen[2].method, seen[2].target) == ("GET", "/v1/application_fees/fee_1")
-            @test seen[2].headers["Stripe-Account"] == ""
+            @test (seen[3].method, seen[3].target) == ("GET", "/v1/application_fees/fee_1")
+            @test seen[3].headers["Stripe-Account"] == ""
             @test (platform_fee.amount, platform_fee.amount_refunded, platform_fee.account) ==
                   (260, 130, "acct_1")
 
             refunded = SC.create_application_fee_refund("fee_1"; amount = 130,
                 idempotency_key = "P1-fee", metadata = Dict("payment" => "P1"))
-            @test (seen[3].method, seen[3].target) == ("POST", "/v1/application_fees/fee_1/refunds")
-            @test seen[3].headers["Stripe-Account"] == ""
-            @test seen[3].headers["Idempotency-Key"] == "P1-fee"
-            @test Set(split(seen[3].body, '&')) == Set(["amount=130", "metadata%5Bpayment%5D=P1"])
+            @test (seen[4].method, seen[4].target) == ("POST", "/v1/application_fees/fee_1/refunds")
+            @test seen[4].headers["Stripe-Account"] == ""
+            @test seen[4].headers["Idempotency-Key"] == "P1-fee"
+            @test Set(split(seen[4].body, '&')) == Set(["amount=130", "metadata%5Bpayment%5D=P1"])
             @test (refunded.id, refunded.amount, refunded.fee) == ("fr_1", 130, "fee_1")
 
             SC.create_application_fee_refund("fee_1")
-            @test seen[4].body == ""
+            @test seen[5].body == ""
         end
     end
 

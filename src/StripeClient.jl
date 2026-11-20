@@ -485,8 +485,10 @@ end
 """
 A charge: one attempt to collect a PaymentIntent's money. On a direct charge it
 lives on the connected account, and `application_fee` is the id of the
-platform's fee on it ([`retrieve_application_fee`](@ref)). `status` is
-`succeeded`, `pending`, or `failed`.
+platform's fee on it ([`retrieve_application_fee`](@ref)). Stripe can create that
+fee a moment after the charge succeeds, so `application_fee` can be `nothing`
+while `application_fee_amount` is set: fetch the charge again later rather than
+taking it to mean there is no fee. `status` is `succeeded`, `pending`, or `failed`.
 """
 @defaults struct Charge
     id::String
@@ -810,15 +812,24 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 
 """
-    list_charges(; payment_intent, stripe_account = nothing, limit = 10) -> ListResponse{Charge}
+    list_charges(; payment_intent, stripe_account = nothing, limit = 10,
+                 starting_after = nothing) -> ListResponse{Charge}
 
 One page of a PaymentIntent's charges, newest first, on the account that owns
 them. A paid PaymentIntent's money, and on a direct charge the platform's fee,
 are on its `succeeded` charge.
 """
 function list_charges(; payment_intent::String, stripe_account::Union{String,Nothing} = nothing,
-                      limit::Int = 10)::ListResponse{Charge}
+                      limit::Int = 10,
+                      starting_after::Union{String,Nothing} = nothing)::ListResponse{Charge}
+    return _list_charges(payment_intent, stripe_account, limit, starting_after)
+end
+
+# Positional for the same reason as `_list_refunds`.
+function _list_charges(payment_intent::String, stripe_account::Union{String,Nothing},
+                       limit::Int, starting_after::Union{String,Nothing})::ListResponse{Charge}
     query = Dict{Symbol,Any}(:payment_intent => payment_intent, :limit => limit)
+    starting_after !== nothing && (query[:starting_after] = starting_after)
     return _make_request(ListResponse{Charge}, _get_client(), "GET", "v1/charges";
                          query, stripe_account)
 end
