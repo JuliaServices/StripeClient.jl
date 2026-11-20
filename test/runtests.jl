@@ -308,6 +308,9 @@ end
             SC.list_checkout_session_line_items("cs_1"; limit = 2, starting_after = "li_2")
             @test occursin("starting_after=li_2", seen[2].target)
             @test occursin("limit=2", seen[2].target)
+            SC.list_checkout_session_line_items("cs_1", "acct_1", 100, nothing)
+            @test !occursin("starting_after", seen[3].target)
+            @test seen[3].headers["Stripe-Account"] == "acct_1"
         end
     end
 
@@ -357,16 +360,21 @@ end
 
             SC.create_application_fee_refund("fee_1")
             @test seen[5].body == ""
+            SC.create_application_fee_refund("fee_1", 40, "P2-fee", Dict{String,String}())
+            @test seen[6].body == "amount=40"
+            @test seen[6].headers["Idempotency-Key"] == "P2-fee"
         end
     end
 
     @testset "succeeded_charge looks through every page of charges" begin
-        charge(id, status; captured = true) = """{"id": "$id", "object": "charge", "status": "$status",
-            "captured": $captured, "application_fee": "fee_$id"}"""
-        # An authorization not captured yet has moved no money, though Stripe calls it succeeded.
-        first_page = """{"object": "list", "has_more": true, "data": [$(charge("ch_3", "failed")),
-            $(charge("ch_2", "succeeded"; captured = false))]}"""
-        second_page = """{"object": "list", "has_more": false, "data": [$(charge("ch_1", "succeeded"))]}"""
+        charge(id, status; captured = true, amount_captured = 500) = """{"id": "$id", "object": "charge",
+            "status": "$status", "captured": $captured, "amount_captured": $amount_captured,
+            "application_fee": "fee_$id"}"""
+        # An authorization not captured yet has collected nothing, though Stripe calls it succeeded.
+        first_page = """{"object": "list", "has_more": true, "data": [$(charge("ch_3", "failed"; amount_captured = 0)),
+            $(charge("ch_2", "succeeded"; captured = false, amount_captured = 0))]}"""
+        # A partial capture has collected money before its last capture.
+        second_page = """{"object": "list", "has_more": false, "data": [$(charge("ch_1", "succeeded"; captured = false))]}"""
         with_stub((method, target) -> (200, occursin("starting_after=ch_2", target) ? second_page : first_page)) do seen
             found = SC.succeeded_charge("pi_1"; stripe_account = "acct_1")
             @test found.id == "ch_1"
@@ -376,6 +384,8 @@ end
         end
         with_stub(ok("""{"object": "list", "has_more": false, "data": []}""")) do seen
             @test SC.succeeded_charge("pi_2") === nothing
+            @test SC.succeeded_charge("pi_2", "acct_2") === nothing
+            @test seen[2].headers["Stripe-Account"] == "acct_2"
         end
     end
 

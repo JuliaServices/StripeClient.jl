@@ -70,3 +70,11 @@ event = StripeClient.construct_webhook_event(String(req.body),
 The package compiles with `juliac --trim=safe` on Julia 1.14 and later; CI
 builds and runs `test/trim/main.jl` to keep it that way. On Julia 1.13 the
 verifier rejects Base's ScopedValues update, which `with_stripe` uses.
+
+A keyword argument whose value can be `nothing` at runtime, such as a page loop's
+cursor or an optional amount, makes the call fail the verifier. The charge, line
+item, and application fee calls have a positional form for that:
+`list_charges(payment_intent, stripe_account, limit, starting_after)`,
+`list_checkout_session_line_items(id, stripe_account, limit, starting_after)`,
+`succeeded_charge(payment_intent, stripe_account)`, and
+`create_application_fee_refund(fee_id, amount, idempotency_key, metadata)`.

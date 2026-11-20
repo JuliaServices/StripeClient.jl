@@ -499,7 +499,7 @@ taking it to mean there is no fee. `status` is `succeeded`, `pending`, or `faile
     currency::Union{String,Nothing} = nothing
     status::Union{String,Nothing} = nothing
     paid::Union{Bool,Nothing} = nothing
-    "`false` for a card authorization not captured yet: no money has moved."
+    "`false` until the charge's last capture: `amount_captured` says what it has collected so far."
     captured::Union{Bool,Nothing} = nothing
     refunded::Union{Bool,Nothing} = nothing
     payment_intent::Union{String,Nothing} = nothing
@@ -710,6 +710,7 @@ end
 """
     list_checkout_session_line_items(id; stripe_account = nothing, limit = 100,
                                      starting_after = nothing) -> ListResponse{LineItem}
+    list_checkout_session_line_items(id, stripe_account, limit, starting_after) -> ListResponse{LineItem}
 
 One page of a Checkout Session's line items, each with its own `taxes`. A session
 in `payment` mode has at most 100 lines, so the default `limit` returns them all.
@@ -718,12 +719,11 @@ function list_checkout_session_line_items(id::String;
                                           stripe_account::Union{String,Nothing} = nothing,
                                           limit::Int = 100,
                                           starting_after::Union{String,Nothing} = nothing)::ListResponse{LineItem}
-    return _list_line_items(id, stripe_account, limit, starting_after)
+    return list_checkout_session_line_items(id, stripe_account, limit, starting_after)
 end
 
-# Positional for the same reason as `_list_refunds`.
-function _list_line_items(id::String, stripe_account::Union{String,Nothing}, limit::Int,
-                          starting_after::Union{String,Nothing})::ListResponse{LineItem}
+function list_checkout_session_line_items(id::String, stripe_account::Union{String,Nothing},
+                                          limit::Int, starting_after::Union{String,Nothing})::ListResponse{LineItem}
     query = Dict{Symbol,Any}(:limit => limit, :expand => ["data.taxes"])
     starting_after !== nothing && (query[:starting_after] = starting_after)
     return _make_request(ListResponse{LineItem}, _get_client(), "GET",
@@ -822,9 +822,8 @@ One page of a PaymentIntent's charges, newest first, on the account that owns
 them. A paid PaymentIntent's money, and on a direct charge the platform's fee,
 are on its `succeeded`, captured charge ([`succeeded_charge`](@ref)).
 
-Page through the charges with the positional form: a loop that passes `nothing`
-for the first page and the last charge's `id` after it compiles with
-`juliac --trim=safe` only that way.
+Pass a value that can be `nothing` at runtime, such as a page loop's cursor, with
+the positional form (see Trimming in the README).
 """
 function list_charges(; payment_intent::String, stripe_account::Union{String,Nothing} = nothing,
                       limit::Int = 10,
@@ -834,20 +833,24 @@ end
 
 """
     succeeded_charge(payment_intent; stripe_account = nothing) -> Union{Charge,Nothing}
+    succeeded_charge(payment_intent, stripe_account) -> Union{Charge,Nothing}
 
-The PaymentIntent's `succeeded`, captured charge, which holds its money and, on a
-direct charge, the platform's fee, looking through every page of its charges.
-`nothing` when it has none yet, as while a card authorization waits to be
-captured.
+The PaymentIntent's `succeeded` charge that has collected money, which holds that
+money and, on a direct charge, the platform's fee, looking through every page of
+its charges. `nothing` when it has none yet, as while a card authorization waits
+to be captured.
 """
-function succeeded_charge(payment_intent::String;
-                          stripe_account::Union{String,Nothing} = nothing)::Union{Charge,Nothing}
+succeeded_charge(payment_intent::String; stripe_account::Union{String,Nothing} = nothing) =
+    succeeded_charge(payment_intent, stripe_account)
+
+function succeeded_charge(payment_intent::String,
+                          stripe_account::Union{String,Nothing})::Union{Charge,Nothing}
     cursor = nothing
     while true
         page = list_charges(payment_intent, stripe_account, 100, cursor)
         for charge in page.data
-            lowercase(something(charge.status, "")) == "succeeded" && charge.captured === true &&
-                return charge
+            lowercase(something(charge.status, "")) == "succeeded" &&
+                something(charge.amount_captured, 0) > 0 && return charge
         end
         page.has_more || return nothing
         isempty(page.data) && error("Stripe charge pagination returned has_more without data")
@@ -877,6 +880,7 @@ end
 """
     create_application_fee_refund(fee_id; amount = nothing, idempotency_key = nothing,
                                   metadata = Dict{String,String}()) -> FeeRefund
+    create_application_fee_refund(fee_id, amount, idempotency_key, metadata) -> FeeRefund
 
 Give `amount` of the platform's application fee `fee_id` back to the connected
 account that paid it, or all that is left with `amount = nothing`. The platform's
@@ -886,9 +890,14 @@ own account makes this call, so it takes no `stripe_account`.
 in proportion to the refund. This gives back an exact amount, as when one charge
 paid for several things and only one of them is refunded.
 """
-function create_application_fee_refund(fee_id::String; amount::Union{Int,Nothing} = nothing,
-                                       idempotency_key::Union{String,Nothing} = nothing,
-                                       metadata::Dict{String,String} = Dict{String,String}())::FeeRefund
+create_application_fee_refund(fee_id::String; amount::Union{Int,Nothing} = nothing,
+                              idempotency_key::Union{String,Nothing} = nothing,
+                              metadata::Dict{String,String} = Dict{String,String}()) =
+    create_application_fee_refund(fee_id, amount, idempotency_key, metadata)
+
+function create_application_fee_refund(fee_id::String, amount::Union{Int,Nothing},
+                                       idempotency_key::Union{String,Nothing},
+                                       metadata::Dict{String,String})::FeeRefund
     body = Dict{Symbol,Any}()
     amount !== nothing && (body[:amount] = amount)
     isempty(metadata) || (body[:metadata] = metadata)

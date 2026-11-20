@@ -29,6 +29,19 @@ function charge_pages(payment_intent::String)::Int
     end
 end
 
+# The positional forms, with values that are `nothing` or not only at runtime,
+# as a caller's own optional values are.
+function optional_requests(account::Union{String,Nothing}, amount::Union{Int,Nothing},
+                           key::Union{String,Nothing})::Int
+    passed = 0
+    passed += attempt("list_checkout_session_line_items positional",
+        () -> SC.list_checkout_session_line_items("cs_1", account, 100, key))
+    passed += attempt("succeeded_charge positional", () -> SC.succeeded_charge("pi_1", account))
+    passed += attempt("create_application_fee_refund positional",
+        () -> SC.create_application_fee_refund("fee_1", amount, key, Dict{String,String}()))
+    return passed
+end
+
 function requests()::Int
     params = Dict{Symbol,Any}(:mode => "payment", :success_url => "https://example.com/paid",
         :expand => ["total_details.breakdown"], :metadata => Dict("order" => "42"),
@@ -71,6 +84,10 @@ end
 
 function (@main)(args::Vector{String})::Cint
     passed = SC.with_stripe(requests, "sk_test_trim"; base_url = "http://127.0.0.1:1", timeout = 5)
+    account = isempty(args) ? nothing : "acct_1"
+    amount = isempty(args) ? nothing : 130
+    passed += SC.with_stripe(() -> optional_requests(account, amount, account), "sk_test_trim";
+                             base_url = "http://127.0.0.1:1", timeout = 5)
     # oauth_token always calls connect.stripe.com, so it is compiled but not run.
     isempty(args) || attempt("oauth_token", () -> SC.oauth_token(args[1]))
 
@@ -84,9 +101,9 @@ function (@main)(args::Vector{String})::Cint
     catch e
         e isa SC.SignatureVerificationError
     end
-    println(Core.stdout, "requests ended in ConnectionError: ", passed, " of 22")
+    println(Core.stdout, "requests ended in ConnectionError: ", passed, " of 25")
     println(Core.stdout, "webhook event: ", event.type, ", wrong secret rejected: ", rejected)
     message = SC.permanent_request_error_message(SC.ConnectionError("x"))
     println(Core.stdout, "permanent message for a ConnectionError: ", message === nothing ? "none" : message)
-    return passed == 22 && rejected ? 0 : 1
+    return passed == 25 && rejected ? 0 : 1
 end
