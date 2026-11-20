@@ -1,9 +1,9 @@
 """
     StripeClient
 
-Calls Stripe's REST API: Checkout Sessions, refunds, Connect accounts with their
-onboarding, dashboard, and OAuth links, Stripe Tax for connected accounts, and
-webhook signature checks. Answers parse into typed structs; fields a struct does
+Calls Stripe's REST API: Checkout Sessions and their line items, refunds, charges
+and application fees, Connect accounts with their onboarding, dashboard, and OAuth
+links, Stripe Tax for connected accounts, and webhook signature checks. Answers parse into typed structs; fields a struct does
 not declare are skipped.
 
 Requests use the client that [`with_stripe`](@ref) sets for a block of code. Pass
@@ -24,6 +24,12 @@ The Stripe API version that tax locations and tax products are created with: the
 first version that accepts their performance-location fields.
 """
 const TAX_API_VERSION = "2025-05-28.basil"
+"""
+The Stripe API version that PaymentIntents are read with: the first version that
+returns `latest_charge`. An account whose default version is older gets its
+charges in a list instead.
+"""
+const PAYMENT_INTENT_API_VERSION = "2022-11-15"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Client
@@ -446,6 +452,108 @@ end
 end
 
 """
+One tax on a [`LineItem`](@ref): the amount Stripe charged at one rate.
+`taxability_reason` says why, such as `standard_rated` or `not_collecting`.
+"""
+@defaults struct LineItemTax
+    amount::Int = 0
+    taxable_amount::Union{Int,Nothing} = nothing
+    taxability_reason::Union{String,Nothing} = nothing
+    rate::CheckoutTaxRateBreakdown = CheckoutTaxRateBreakdown()
+end
+
+"The price a line item was sold at. `product` is the product's id."
+@defaults struct LineItemPrice
+    id::Union{String,Nothing} = nothing
+    product::Union{String,Nothing} = nothing
+    unit_amount::Union{Int,Nothing} = nothing
+    currency::Union{String,Nothing} = nothing
+end
+
+"""
+One line of a Checkout Session. Amounts are in the smallest currency unit, and
+`amount_total` is what the line charged, its tax included.
+"""
+@defaults struct LineItem
+    id::String
+    object::String = "item"
+    amount_subtotal::Int = 0
+    amount_discount::Int = 0
+    amount_tax::Int = 0
+    amount_total::Int = 0
+    currency::Union{String,Nothing} = nothing
+    description::Union{String,Nothing} = nothing
+    quantity::Union{Int,Nothing} = nothing
+    price::Union{LineItemPrice,Nothing} = nothing
+    taxes::Vector{LineItemTax} = LineItemTax[]
+end
+
+"""
+A PaymentIntent. Once `status` is `succeeded`, `latest_charge` is the id of the
+charge that collected its money ([`retrieve_charge`](@ref)).
+"""
+@defaults struct PaymentIntent
+    id::String
+    object::String = "payment_intent"
+    status::Union{String,Nothing} = nothing
+    amount::Union{Int,Nothing} = nothing
+    amount_received::Union{Int,Nothing} = nothing
+    currency::Union{String,Nothing} = nothing
+    latest_charge::Union{String,Nothing} = nothing
+    application_fee_amount::Union{Int,Nothing} = nothing
+    metadata::Union{Dict{String,String},Nothing} = nothing
+end
+
+"""
+A charge: one attempt to collect a PaymentIntent's money. On a direct charge it
+lives on the connected account, and `application_fee` is the id of the
+platform's fee on it ([`retrieve_application_fee`](@ref)). Stripe can create that
+fee a moment after the charge succeeds, so `application_fee` can be `nothing`
+while `application_fee_amount` is set: fetch the charge again later rather than
+taking it to mean there is no fee. `status` is `succeeded`, `pending`, or `failed`.
+"""
+@defaults struct Charge
+    id::String
+    object::String = "charge"
+    amount::Union{Int,Nothing} = nothing
+    amount_refunded::Union{Int,Nothing} = nothing
+    currency::Union{String,Nothing} = nothing
+    status::Union{String,Nothing} = nothing
+    payment_intent::Union{String,Nothing} = nothing
+    application_fee::Union{String,Nothing} = nothing
+    application_fee_amount::Union{Int,Nothing} = nothing
+    created::Union{Int,Nothing} = nothing
+end
+
+"""
+The platform's fee on a direct charge, as the platform's own account sees it.
+`amount_refunded` is how much of `amount` has gone back to the connected account
+(`account`) so far.
+"""
+@defaults struct ApplicationFee
+    id::String
+    object::String = "application_fee"
+    amount::Int = 0
+    amount_refunded::Int = 0
+    refunded::Bool = false
+    currency::Union{String,Nothing} = nothing
+    account::Union{String,Nothing} = nothing
+    charge::Union{String,Nothing} = nothing
+    created::Union{Int,Nothing} = nothing
+end
+
+"Part or all of an application fee, given back to the connected account that paid it."
+@defaults struct FeeRefund
+    id::String
+    object::String = "fee_refund"
+    amount::Int = 0
+    currency::Union{String,Nothing} = nothing
+    fee::Union{String,Nothing} = nothing
+    created::Union{Int,Nothing} = nothing
+    metadata::Union{Dict{String,String},Nothing} = nothing
+end
+
+"""
 A connected account. Nested objects such as `business_profile` and `settings`
 are not kept; each optional nested struct adds code that `juliac --trim` must
 check, so add one when a caller needs it.
@@ -616,6 +724,29 @@ function expire_checkout_session(id::String;
                          stripe_account)
 end
 
+"""
+    list_checkout_session_line_items(id; stripe_account = nothing, limit = 100,
+                                     starting_after = nothing) -> ListResponse{LineItem}
+    list_checkout_session_line_items(id, stripe_account, limit, starting_after) -> ListResponse{LineItem}
+
+One page of a Checkout Session's line items, each with its own `taxes`. A session
+in `payment` mode has at most 100 lines, so the default `limit` returns them all.
+"""
+function list_checkout_session_line_items(id::String;
+                                          stripe_account::Union{String,Nothing} = nothing,
+                                          limit::Int = 100,
+                                          starting_after::Union{String,Nothing} = nothing)::ListResponse{LineItem}
+    return list_checkout_session_line_items(id, stripe_account, limit, starting_after)
+end
+
+function list_checkout_session_line_items(id::String, stripe_account::Union{String,Nothing},
+                                          limit::Int, starting_after::Union{String,Nothing})::ListResponse{LineItem}
+    query = Dict{Symbol,Any}(:limit => limit, :expand => ["data.taxes"])
+    starting_after !== nothing && (query[:starting_after] = starting_after)
+    return _make_request(ListResponse{LineItem}, _get_client(), "GET",
+                         "v1/checkout/sessions/$id/line_items"; query, stripe_account)
+end
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Refunds
 # ══════════════════════════════════════════════════════════════════════════════
@@ -693,6 +824,81 @@ function refunded_total(payment_intent::String;
         isempty(page.data) && error("Stripe refund pagination returned has_more without data")
         cursor = last(page.data).id
     end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Charges and application fees
+# ══════════════════════════════════════════════════════════════════════════════
+
+"""
+    retrieve_payment_intent(id; stripe_account = nothing) -> PaymentIntent
+    retrieve_payment_intent(id, stripe_account) -> PaymentIntent
+
+Fetch a PaymentIntent, on the connected account for a direct charge.
+"""
+retrieve_payment_intent(id::String; stripe_account::Union{String,Nothing} = nothing) =
+    retrieve_payment_intent(id, stripe_account)
+
+function retrieve_payment_intent(id::String, stripe_account::Union{String,Nothing})::PaymentIntent
+    return _make_request(PaymentIntent, _get_client(), "GET", "v1/payment_intents/$id";
+                         stripe_account, stripe_version = PAYMENT_INTENT_API_VERSION)
+end
+
+"""
+    retrieve_charge(id; stripe_account = nothing) -> Charge
+    retrieve_charge(id, stripe_account) -> Charge
+
+Fetch a charge, on the connected account for a direct charge.
+"""
+retrieve_charge(id::String; stripe_account::Union{String,Nothing} = nothing) =
+    retrieve_charge(id, stripe_account)
+
+function retrieve_charge(id::String, stripe_account::Union{String,Nothing})::Charge
+    return _make_request(Charge, _get_client(), "GET", "v1/charges/$id"; stripe_account)
+end
+
+"""
+    retrieve_application_fee(id) -> ApplicationFee
+
+Fetch the platform's fee on a direct charge, for example to see how much of it
+has been refunded. The platform's own account makes this call, so it takes no
+`stripe_account`.
+"""
+function retrieve_application_fee(id::String)::ApplicationFee
+    return _make_request(ApplicationFee, _get_client(), "GET", "v1/application_fees/$id")
+end
+
+"""
+    create_application_fee_refund(fee_id; amount = nothing, idempotency_key = nothing,
+                                  metadata = Dict{String,String}()) -> FeeRefund
+    create_application_fee_refund(fee_id, amount, idempotency_key, metadata) -> FeeRefund
+
+Give `amount` of the platform's application fee `fee_id` back to the connected
+account that paid it, or all that is left with `amount = nothing`. The platform's
+own account makes this call, so it takes no `stripe_account`.
+
+[`create_refund`](@ref) with `refund_application_fee = true` gives the fee back
+in proportion to the refund. This gives back an exact amount, as when one charge
+paid for several things and only one of them is refunded.
+
+Keep the customer's refunds and the fee's refunds separate for a payment that
+uses multicapture: Stripe refuses a partial refund there with
+`refund_application_fee = true`, and once this call has refunded part of its fee,
+any later refund with that flag.
+"""
+create_application_fee_refund(fee_id::String; amount::Union{Int,Nothing} = nothing,
+                              idempotency_key::Union{String,Nothing} = nothing,
+                              metadata::Dict{String,String} = Dict{String,String}()) =
+    create_application_fee_refund(fee_id, amount, idempotency_key, metadata)
+
+function create_application_fee_refund(fee_id::String, amount::Union{Int,Nothing},
+                                       idempotency_key::Union{String,Nothing},
+                                       metadata::Dict{String,String})::FeeRefund
+    body = Dict{Symbol,Any}()
+    amount !== nothing && (body[:amount] = amount)
+    isempty(metadata) || (body[:metadata] = metadata)
+    return _make_request(FeeRefund, _get_client(), "POST", "v1/application_fees/$fee_id/refunds";
+                         body, idempotency_key)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════

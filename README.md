@@ -2,9 +2,10 @@
 
 [![CI](https://github.com/JuliaServices/StripeClient.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/JuliaServices/StripeClient.jl/actions/workflows/ci.yml)
 
-Call Stripe's API from a Julia server: Checkout Sessions, refunds, Connect
-accounts (onboarding links, dashboard links, OAuth), Stripe Tax for connected
-accounts, and webhook signature checks. Answers parse into typed structs.
+Call Stripe's API from a Julia server: Checkout Sessions and their line items,
+refunds, charges and application fees, Connect accounts (onboarding links,
+dashboard links, OAuth), Stripe Tax for connected accounts, and webhook signature
+checks. Answers parse into typed structs.
 
 It covers the slice of Stripe that a platform taking payments for other
 businesses needs, and grows as callers need more.
@@ -34,8 +35,10 @@ vectors become Stripe's bracket notation (`StripeClient.form_params` shows the
 fields a dictionary turns into).
 
 Request functions: `create_checkout_session`, `retrieve_checkout_session`,
-`expire_checkout_session`, `create_refund`, `retrieve_refund`, `list_refunds`,
-`refunded_total`, `create_account`, `retrieve_account`, `create_account_link`,
+`expire_checkout_session`, `list_checkout_session_line_items`, `create_refund`,
+`retrieve_refund`, `list_refunds`, `refunded_total`, `retrieve_payment_intent`, `retrieve_charge`,
+`retrieve_application_fee`, `create_application_fee_refund`, `create_account`,
+`retrieve_account`, `create_account_link`,
 `create_login_link`, `oauth_token`, `create_tax_account_session`,
 `retrieve_tax_settings`, `list_tax_registrations`, `create_tax_location`, and
 `create_tax_product`.
@@ -67,3 +70,10 @@ event = StripeClient.construct_webhook_event(String(req.body),
 The package compiles with `juliac --trim=safe` on Julia 1.14 and later; CI
 builds and runs `test/trim/main.jl` to keep it that way. On Julia 1.13 the
 verifier rejects Base's ScopedValues update, which `with_stripe` uses.
+
+A keyword argument whose value can be `nothing` at runtime, such as a page loop's
+cursor or an optional amount, makes the call fail the verifier. The PaymentIntent,
+charge, line item, and application fee calls have a positional form for that:
+`retrieve_payment_intent(id, stripe_account)`, `retrieve_charge(id, stripe_account)`,
+`list_checkout_session_line_items(id, stripe_account, limit, starting_after)`, and
+`create_application_fee_refund(fee_id, amount, idempotency_key, metadata)`.

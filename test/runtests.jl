@@ -270,6 +270,105 @@ end
         end
     end
 
+    @testset "a session's line items carry their own taxes" begin
+        line_items = """
+        {"object": "list", "url": "/v1/checkout/sessions/cs_1/line_items", "has_more": false, "data": [
+          {"id": "li_1", "object": "item", "amount_subtotal": 2500, "amount_discount": 250,
+           "amount_tax": 164, "amount_total": 2414, "currency": "usd", "description": "Spring league",
+           "quantity": 1,
+           "price": {"id": "price_1", "object": "price", "product": "prod_1", "unit_amount": 2500,
+                     "currency": "usd", "type": "one_time"},
+           "taxes": [{"amount": 164, "taxable_amount": 2250, "taxability_reason": "standard_rated",
+                      "rate": {"id": "txr_1", "object": "tax_rate", "display_name": "Sales Tax",
+                               "percentage": 7.3, "jurisdiction": "Utah", "state": "UT",
+                               "country": "US", "tax_type": "sales_tax"}}]},
+          {"id": "li_2", "object": "item", "amount_subtotal": 130, "amount_discount": 0,
+           "amount_tax": 0, "amount_total": 130, "currency": "usd", "description": "Fee",
+           "quantity": 1, "price": {"id": "price_2", "product": "prod_2", "unit_amount": 130},
+           "taxes": []}
+        ]}
+        """
+        with_stub(ok(line_items)) do seen
+            page = SC.list_checkout_session_line_items("cs_1"; stripe_account = "acct_1")
+            request = only(seen)
+            @test request.method == "GET"
+            path, query = split(request.target, '?')
+            @test path == "/v1/checkout/sessions/cs_1/line_items"
+            @test Set(split(query, '&')) == Set(["limit=100", "expand%5B%5D=data.taxes"])
+            @test request.headers["Stripe-Account"] == "acct_1"
+            first_line, fee_line = page.data
+            @test (first_line.amount_subtotal, first_line.amount_discount,
+                   first_line.amount_tax, first_line.amount_total) == (2500, 250, 164, 2414)
+            @test first_line.price.product == "prod_1"
+            tax = only(first_line.taxes)
+            @test (tax.amount, tax.taxable_amount, tax.taxability_reason) == (164, 2250, "standard_rated")
+            @test tax.rate.jurisdiction == "Utah"
+            @test isempty(fee_line.taxes)
+
+            SC.list_checkout_session_line_items("cs_1"; limit = 2, starting_after = "li_2")
+            @test occursin("starting_after=li_2", seen[2].target)
+            @test occursin("limit=2", seen[2].target)
+            SC.list_checkout_session_line_items("cs_1", "acct_1", 100, nothing)
+            @test !occursin("starting_after", seen[3].target)
+            @test seen[3].headers["Stripe-Account"] == "acct_1"
+        end
+    end
+
+    @testset "a PaymentIntent names its charge, whose fee the platform reads and refunds" begin
+        intent = """{"id": "pi_1", "object": "payment_intent", "status": "succeeded", "amount": 5260,
+                     "amount_received": 5260, "currency": "usd", "latest_charge": "ch_1",
+                     "application_fee_amount": 260, "metadata": {"group": "G1"},
+                     "payment_method_types": ["card"]}"""
+        charge = """{"id": "ch_1", "object": "charge", "amount": 5260, "amount_captured": 5260,
+                     "amount_refunded": 0, "currency": "usd", "status": "succeeded", "paid": true,
+                     "refunded": false, "payment_intent": "pi_1", "application_fee": "fee_1",
+                     "application_fee_amount": 260, "created": 1762900000,
+                     "balance_transaction": "txn_1", "outcome": {"type": "authorized"}}"""
+        fee = """{"id": "fee_1", "object": "application_fee", "amount": 260, "amount_refunded": 130,
+                  "refunded": false, "currency": "usd", "account": "acct_1", "charge": "ch_1",
+                  "created": 1762900000, "refunds": {"object": "list", "data": []}}"""
+        fee_refund = """{"id": "fr_1", "object": "fee_refund", "amount": 130, "currency": "usd",
+                         "fee": "fee_1", "created": 1762900100, "metadata": {"payment": "P1"},
+                         "balance_transaction": "txn_2"}"""
+        answers = Dict("/v1/payment_intents/pi_1" => intent, "/v1/charges/ch_1" => charge,
+                       "/v1/application_fees/fee_1" => fee,
+                       "/v1/application_fees/fee_1/refunds" => fee_refund)
+        with_stub((method, target) -> (200, answers[first(split(target, '?'))])) do seen
+            payment = SC.retrieve_payment_intent("pi_1"; stripe_account = "acct_1")
+            @test (seen[1].method, seen[1].target) == ("GET", "/v1/payment_intents/pi_1")
+            @test seen[1].headers["Stripe-Account"] == "acct_1"
+            # Pinned, so an account on an older default version still gets `latest_charge`.
+            @test seen[1].headers["Stripe-Version"] == SC.PAYMENT_INTENT_API_VERSION
+            @test (payment.status, payment.latest_charge, payment.application_fee_amount) ==
+                  ("succeeded", "ch_1", 260)
+            paid = SC.retrieve_charge(payment.latest_charge, "acct_1")
+            @test (seen[2].method, seen[2].target) == ("GET", "/v1/charges/ch_1")
+            @test seen[2].headers["Stripe-Account"] == "acct_1"
+            @test (paid.status, paid.application_fee, paid.application_fee_amount) ==
+                  ("succeeded", "fee_1", 260)
+
+            platform_fee = SC.retrieve_application_fee("fee_1")
+            @test (seen[3].method, seen[3].target) == ("GET", "/v1/application_fees/fee_1")
+            @test seen[3].headers["Stripe-Account"] == ""
+            @test (platform_fee.amount, platform_fee.amount_refunded, platform_fee.account) ==
+                  (260, 130, "acct_1")
+
+            refunded = SC.create_application_fee_refund("fee_1"; amount = 130,
+                idempotency_key = "P1-fee", metadata = Dict("payment" => "P1"))
+            @test (seen[4].method, seen[4].target) == ("POST", "/v1/application_fees/fee_1/refunds")
+            @test seen[4].headers["Stripe-Account"] == ""
+            @test seen[4].headers["Idempotency-Key"] == "P1-fee"
+            @test Set(split(seen[4].body, '&')) == Set(["amount=130", "metadata%5Bpayment%5D=P1"])
+            @test (refunded.id, refunded.amount, refunded.fee) == ("fr_1", 130, "fee_1")
+
+            SC.create_application_fee_refund("fee_1")
+            @test seen[5].body == ""
+            SC.create_application_fee_refund("fee_1", 40, "P2-fee", Dict{String,String}())
+            @test seen[6].body == "amount=40"
+            @test seen[6].headers["Idempotency-Key"] == "P2-fee"
+        end
+    end
+
     @testset "refunded_total sums succeeded refunds across pages" begin
         first_page = refund_page(true, refund("re_1", "succeeded", 500), refund("re_2", "failed", 300))
         last_page = refund_page(false, refund("re_3", "succeeded", 200), refund("re_4", "pending", 100))
