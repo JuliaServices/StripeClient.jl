@@ -439,6 +439,29 @@ end
         @test length(connections) == 1
     end
 
+    @testset "a connection closed before Stripe answers ends in a ConnectionError" begin
+        port, listener = Sockets.listenany(Sockets.localhost, 0)
+        @async try
+            while true
+                connection = Sockets.accept(listener)
+                readavailable(connection)
+                close(connection)
+            end
+        catch
+        end
+        err = try
+            SC.with_stripe(KEY; base_url = "http://127.0.0.1:$port") do
+                SC.create_refund(; payment_intent = "pi_1")
+            end
+            nothing
+        catch e
+            e
+        finally
+            close(listener)
+        end
+        @test err isa SC.ConnectionError
+    end
+
     @testset "a refused connection ends in a ConnectionError" begin
         port, listener = Sockets.listenany(Sockets.localhost, 0)
         close(listener)
