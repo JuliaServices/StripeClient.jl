@@ -102,9 +102,10 @@ Base.showerror(io::IO, e::AuthenticationError) =
 """
     ConnectionError(reason)
 
-Stripe could not be reached, or did not answer within the client's timeout.
-Trying again can succeed. A request that timed out may still have reached
-Stripe, so send a retried POST with the same `idempotency_key`.
+Stripe could not be reached, did not answer within the client's timeout, or the
+connection broke before its answer arrived. Trying again can succeed. A request
+that failed this way may still have reached Stripe, so send a retried POST with
+the same `idempotency_key`.
 """
 struct ConnectionError <: Exception
     reason::String
@@ -178,6 +179,13 @@ end
         throw(ConnectionError("could not connect to $(e.address)"))
     e isa HTTP.DNSError &&
         throw(ConnectionError("could not look up $(e.hostname)"))
+    # Any other failure in HTTP.jl's transport means Stripe's answer never arrived:
+    # the connection was reset or closed early, the answer was garbled, or a TLS or
+    # HTTP/2 stream failed. A StatusError is an answer, so it passes through.
+    if (e isa HTTP.HTTPError && !(e isa HTTP.StatusError)) ||
+       e isa EOFError || e isa Base.IOError || e isa SystemError
+        throw(ConnectionError("the connection failed before Stripe answered"))
+    end
     return nothing
 end
 

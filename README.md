@@ -55,9 +55,10 @@ event = StripeClient.construct_webhook_event(String(req.body),
 - `StripeClient.AuthenticationError`: Stripe refused the API key (HTTP 401 or
   403). The server's configuration is wrong; don't pass the 401 on to your own
   client.
-- `StripeClient.ConnectionError`: Stripe could not be reached or did not answer
-  in time (10 s to connect, 30 s in all; set `timeout` on `with_stripe`). Retry
-  POSTs with the same `idempotency_key`.
+- `StripeClient.ConnectionError`: Stripe could not be reached, did not answer
+  in time (10 s to connect, 30 s in all; set `timeout` on `with_stripe`), or the
+  connection broke before its answer arrived. Retry POSTs with the same
+  `idempotency_key`.
 - `StripeClient.SignatureVerificationError`: a webhook's signature does not
   match.
 - Any other refusal is an `HTTP.StatusError`.
